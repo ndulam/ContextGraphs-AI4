@@ -1,0 +1,22 @@
+# Environment / secrets
+.env
+
+# Runtime graph state
+context_graph.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
