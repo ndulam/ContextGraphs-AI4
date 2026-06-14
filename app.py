@@ -65,6 +65,11 @@ def _init():
             st.session_state[k] = v
     if st.session_state.graph is None:
         st.session_state.graph = get_or_create_graph(DEFAULT_DATE)
+    g = st.session_state.graph
+    if not hasattr(g, "highlighted_nodes"):
+        g.highlighted_nodes = set()
+    if not hasattr(g, "path_description"):
+        g.path_description = ""
 
 _init()
 
@@ -155,6 +160,25 @@ with st.sidebar:
 
     if st.button("6. Why are you recommending House D?", use_container_width=True, key="cg_6"):
         inject("Why are you recommending House D?", "cg")
+
+    st.markdown("---")
+    st.markdown("**Graph Traversal Demo**")
+
+    if st.button("7. What if commute is no longer a priority?", use_container_width=True, key="cg_7"):
+        inject(
+            "We've reconsidered our priorities — commute is no longer a top concern for us. "
+            "Use the graph to analyze which past decisions were influenced by commute-related reasoning. "
+            "What changes? Which decisions might need to be revisited?",
+            "cg",
+        )
+
+    if st.button("8. Trace: how exactly did we end up with House D?", use_container_width=True, key="cg_8"):
+        inject(
+            "Trace the complete reasoning path in the Context Graph that led to recommending House D. "
+            "Walk me through every node — from our stored preferences, through the rejection decision, "
+            "to the final recommendation. Show the full chain.",
+            "cg",
+        )
 
     st.divider()
     st.caption(f"Date: `{st.session_state.simulated_date}`")
@@ -267,6 +291,11 @@ with col_chat:
 
             # Stream Context Graph response
             if action == "cg":
+                if hasattr(st.session_state.graph, "clear_highlighted_nodes"):
+                    st.session_state.graph.clear_highlighted_nodes()
+                else:
+                    st.session_state.graph.highlighted_nodes = set()
+                    st.session_state.graph.path_description = ""
                 with st.chat_message("user"):
                     st.markdown(user_msg)
                 new_graph_events: list[str] = []
@@ -343,6 +372,11 @@ with col_graph:
             f'<span style="font-size:11px;">{label}</span>',
             unsafe_allow_html=True,
         )
+
+    if graph.highlighted_nodes and graph.path_description:
+        st.divider()
+        st.markdown("**Reasoning Path Traversed**")
+        st.info(f"✨ {graph.path_description}", icon=None)
 
     st.divider()
     st.markdown("**Timeline**")

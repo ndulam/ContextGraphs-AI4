@@ -110,6 +110,52 @@ TOOLS = [
             "required": ["house_id"],
         },
     },
+    {
+        "name": "highlight_reasoning_path",
+        "description": (
+            "Visually highlight the specific nodes and edges in the Context Graph that form "
+            "the reasoning chain behind your answer. Call this AFTER determining your answer, "
+            "passing the node IDs you actually traversed. The audience will see exactly which "
+            "graph nodes lit up — making the difference between graph traversal and flat memory lookup visible. "
+            "Use node IDs from the graph state: 'user', 'house_a/b/c/d', and the 'id' fields "
+            "from decision_history, preferences, and recommendations."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "node_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Node IDs that form the reasoning path (e.g. ['user', 'pref_1', 'decision_1', 'house_b', 'rec_1', 'house_d'])",
+                },
+                "path_description": {
+                    "type": "string",
+                    "description": "Human-readable description of the traversal path shown to the audience (e.g. 'User → PREFERS Low HOA → REJECT House B → GENERATED FROM → Recommend House D')",
+                },
+            },
+            "required": ["node_ids", "path_description"],
+        },
+    },
+    {
+        "name": "analyze_preference_impact",
+        "description": (
+            "Analyze what changes in the graph if a preference is dropped or deprioritized. "
+            "Traverses the graph to find all Reason nodes matching the keyword, then walks up "
+            "to the Decision nodes that were BASED_ON those reasons, and identifies which "
+            "houses might need reconsideration. Automatically highlights the affected subgraph. "
+            "Call this when the user asks 'what if X no longer matters' or 'we changed our mind about X'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "preference_keyword": {
+                    "type": "string",
+                    "description": "Keyword to search in reason/preference nodes (e.g. 'commute', 'HOA', 'schools')",
+                }
+            },
+            "required": ["preference_keyword"],
+        },
+    },
 ]
 
 
@@ -120,23 +166,26 @@ The Context Graph is your persistent memory. It stores:
 - Houses being evaluated (with all attributes)
 - Decisions made (accept / reject / defer) with full reasoning
 - Preferences the user has expressed
-- The history and timeline of all interactions
+- Recommendations with traceable links to the decisions that generated them
+- The full timeline of interactions
 
 Today's date: {simulated_date}
 
 Your behavior rules:
-1. ALWAYS call get_context_graph_state() at the start of each response to load current context.
+1. ALWAYS call get_context_graph_state() first to load current context. Note the 'id' fields — you need them for highlighting.
 2. When the user makes a decision about a house, call add_decision() immediately.
 3. When the user expresses a preference, call add_preference().
-4. When recommending a house, call add_recommendation() and cite the specific prior decision or preference that drives the recommendation.
+4. When recommending a house, call add_recommendation() and cite the specific prior decision or preference that drives it.
 5. Answer the three questions audiences care about:
    - "What happened?" → state decisions from the graph
    - "Why did it happen?" → cite stored reasons and rationale from the graph
    - "What should we do next?" → use stored preferences and decision history
 6. Be concise but specific. Reference dates, house names, and stored reasons directly.
 7. Never fabricate decisions or reasons — only cite what is in the graph.
+8. ALWAYS call highlight_reasoning_path() before your final answer, passing the specific node IDs you traversed to reach your answer. This makes graph traversal visible to the audience — it is what distinguishes a Context Graph from flat memory. Include 'user', relevant house IDs, decision IDs, reason IDs, preference IDs, and recommendation IDs from the graph state.
+9. When the user asks "what if X no longer matters" or changes a preference, call analyze_preference_impact() with the relevant keyword to traverse the graph and find affected decisions.
 
-This is a demonstration showing that AI agents fail not because information is missing, but because CONTEXT is missing. Show the power of the Context Graph in every response."""
+This is a demonstration showing that AI agents fail not because information is missing, but because CONTEXT is missing. Every response should visibly demonstrate graph traversal."""
 
 
 def _execute_tool(tool_name: str, tool_input: dict, graph: ContextGraph, simulated_date: str) -> tuple[str, list[str]]:
@@ -185,6 +234,65 @@ def _execute_tool(tool_name: str, tool_input: dict, graph: ContextGraph, simulat
         house_name = HOUSES.get(tool_input["house_id"], {}).get("name", tool_input["house_id"])
         events.append(f"Added to graph: {house_name}")
         return json.dumps({"status": "ok"}), events
+
+    if tool_name == "highlight_reasoning_path":
+        node_ids = tool_input.get("node_ids", [])
+        description = tool_input.get("path_description", "")
+        graph.set_highlighted_nodes(node_ids, description)
+        events.append(f"Path: {description}")
+        return json.dumps({"status": "ok", "highlighted_count": len(graph.highlighted_nodes)}), events
+
+    if tool_name == "analyze_preference_impact":
+        keyword = tool_input.get("preference_keyword", "").lower()
+
+        matching_reasons = [
+            (nid, attrs) for nid, attrs in graph.g.nodes(data=True)
+            if attrs.get("node_type") == "Reason"
+            and keyword in attrs.get("text", "").lower()
+        ]
+
+        affected_decisions = []
+        for reason_id, _ in matching_reasons:
+            for src, _ in graph.g.in_edges(reason_id):
+                if graph.g.nodes[src].get("node_type") == "Decision":
+                    dec_attrs = graph.g.nodes[src]
+                    all_reasons = [
+                        graph.g.nodes[r].get("text", "")
+                        for _, r in graph.g.out_edges(src)
+                        if graph.g.nodes[r].get("node_type") == "Reason"
+                    ]
+                    other_reasons = [r for r in all_reasons if keyword not in r.lower()]
+                    affected_decisions.append({
+                        "id": src,
+                        "house": dec_attrs.get("house", ""),
+                        "house_name": HOUSES.get(dec_attrs.get("house", ""), {}).get("name", ""),
+                        "decision_type": dec_attrs.get("decision_type", ""),
+                        "all_reasons": all_reasons,
+                        "other_reasons_still_valid": other_reasons,
+                        "decision_would_change": len(other_reasons) == 0,
+                    })
+
+        highlight_ids = (
+            [r[0] for r in matching_reasons]
+            + [d["id"] for d in affected_decisions]
+            + [d["house"] for d in affected_decisions if d["house"]]
+            + ["user"]
+        )
+        graph.set_highlighted_nodes(
+            highlight_ids,
+            f"Impact of removing '{keyword}': {len(affected_decisions)} decision(s) affected"
+        )
+        events.append(f"Impact analysis: '{keyword}' affects {len(affected_decisions)} decision(s)")
+
+        return json.dumps({
+            "keyword": keyword,
+            "matching_reason_nodes": [{"id": r[0], "text": r[1].get("text")} for r in matching_reasons],
+            "affected_decisions": affected_decisions,
+            "summary": (
+                f"{len(matching_reasons)} reason node(s) found for '{keyword}'. "
+                f"{len(affected_decisions)} decision(s) were BASED_ON these reasons."
+            ),
+        }, indent=2), events
 
     return json.dumps({"error": f"Unknown tool: {tool_name}"}), events
 
@@ -243,13 +351,15 @@ def ask_agent(
 
 
 TOOL_STATUS_LABELS = {
-    "get_context_graph_state": "📊 Reading context graph…",
-    "get_active_candidates":   "🏠 Checking active houses…",
-    "get_rejected_houses":     "🗂️ Looking up rejected houses…",
-    "add_decision":            "✍️ Recording decision…",
-    "add_preference":          "💡 Storing preference…",
-    "add_recommendation":      "⭐ Recording recommendation…",
-    "add_house_to_graph":      "➕ Adding house to graph…",
+    "get_context_graph_state":    "📊 Reading context graph…",
+    "get_active_candidates":      "🏠 Checking active houses…",
+    "get_rejected_houses":        "🗂️ Looking up rejected houses…",
+    "add_decision":               "✍️ Recording decision…",
+    "add_preference":             "💡 Storing preference…",
+    "add_recommendation":         "⭐ Recording recommendation…",
+    "add_house_to_graph":         "➕ Adding house to graph…",
+    "highlight_reasoning_path":   "✨ Highlighting reasoning path…",
+    "analyze_preference_impact":  "🔍 Analyzing impact on graph…",
 }
 
 

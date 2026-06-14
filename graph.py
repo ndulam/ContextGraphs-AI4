@@ -15,6 +15,16 @@ class ContextGraph:
         self.g = nx.DiGraph()
         self.events: list[dict] = []
         self._node_counter = 0
+        self.highlighted_nodes: set[str] = set()
+        self.path_description: str = ""
+
+    def set_highlighted_nodes(self, node_ids: list[str], description: str = ""):
+        self.highlighted_nodes = set(n for n in node_ids if n in self.g.nodes)
+        self.path_description = description
+
+    def clear_highlighted_nodes(self):
+        self.highlighted_nodes = set()
+        self.path_description = ""
 
     def _next_id(self, prefix: str) -> str:
         self._node_counter += 1
@@ -174,9 +184,11 @@ class ContextGraph:
         for node_id, attrs in self.g.nodes(data=True):
             if attrs.get("node_type") == "Decision":
                 reasons = []
+                reason_ids = []
                 for _, reason_id in self.g.out_edges(node_id):
                     if self.g.nodes[reason_id].get("node_type") == "Reason":
                         reasons.append(self.g.nodes[reason_id].get("text", ""))
+                        reason_ids.append(reason_id)
                 decisions.append(
                     {
                         "id": node_id,
@@ -184,17 +196,38 @@ class ContextGraph:
                         "house": attrs.get("house"),
                         "rationale": attrs.get("rationale", ""),
                         "reasons": reasons,
+                        "reason_ids": reason_ids,
                         "date": attrs.get("date", ""),
                     }
                 )
         return decisions
 
-    def get_preferences(self) -> list[str]:
+    def get_preferences(self) -> list[dict]:
         return [
-            attrs.get("text", "")
-            for _, attrs in self.g.nodes(data=True)
+            {"id": nid, "text": attrs.get("text", "")}
+            for nid, attrs in self.g.nodes(data=True)
             if attrs.get("node_type") == "Preference"
         ]
+
+    def get_recommendations(self) -> list[dict]:
+        recs = []
+        for node_id, attrs in self.g.nodes(data=True):
+            if attrs.get("node_type") == "Recommendation":
+                linked_decision = ""
+                linked_house = ""
+                for _, dst in self.g.out_edges(node_id):
+                    dst_type = self.g.nodes[dst].get("node_type", "")
+                    if dst_type == "Decision":
+                        linked_decision = dst
+                    elif dst_type in ("House", "House_new", "House_rejected"):
+                        linked_house = dst
+                recs.append({
+                    "id": node_id,
+                    "label": attrs.get("label", ""),
+                    "linked_decision": linked_decision,
+                    "linked_house": linked_house,
+                })
+        return recs
 
     def to_summary_dict(self) -> dict:
         active = [
@@ -207,35 +240,51 @@ class ContextGraph:
         rejected = self.get_rejected_houses()
         decisions = self.get_decision_history()
         preferences = self.get_preferences()
+        recommendations = self.get_recommendations()
         return {
+            "user_node_id": "user",
             "active_houses": active,
             "rejected_houses": rejected,
             "decision_history": decisions,
             "preferences": preferences,
+            "recommendations": recommendations,
+            "note": "Use node 'id' fields when calling highlight_reasoning_path()",
         }
 
     # --- streamlit-agraph serialization ---
 
     def to_agraph_format(self) -> tuple[list[Node], list[Edge]]:
+        hl = self.highlighted_nodes
         nodes = []
         for node_id, attrs in self.g.nodes(data=True):
+            is_hl = node_id in hl
+            base_color = attrs.get("color", "#AAAAAA")
+            is_house = attrs.get("node_type") in ("House", "House_new", "House_rejected")
+            color = (
+                {"background": base_color, "border": "#FFD700",
+                 "highlight": {"background": base_color, "border": "#FFD700"}}
+                if is_hl else base_color
+            )
             nodes.append(
                 Node(
                     id=node_id,
                     label=attrs.get("label", node_id),
-                    color=attrs.get("color", "#AAAAAA"),
-                    size=20 if attrs.get("node_type") in ("House", "House_new", "House_rejected") else 15,
-                    font={"size": 11},
+                    color=color,
+                    size=30 if (is_hl and is_house) else 22 if is_hl else 20 if is_house else 15,
+                    font={"size": 12 if is_hl else 11},
                 )
             )
         edges = []
         for src, dst, attrs in self.g.edges(data=True):
+            is_hl_edge = src in hl and dst in hl
             edges.append(
                 Edge(
                     source=src,
                     target=dst,
                     label=attrs.get("relationship", ""),
+                    color={"color": "#FFD700", "opacity": 1.0} if is_hl_edge else {"color": "#555577", "opacity": 0.7},
                     font={"size": 9, "align": "middle"},
+                    width=3 if is_hl_edge else 1,
                 )
             )
         return nodes, edges
