@@ -1,10 +1,12 @@
 import os
+import time
 
 import streamlit as st
 from streamlit_agraph import agraph, Config
 
 from agent import stream_ask_agent
 from data import HOUSES, NODE_COLORS
+from demo_cache import CACHE
 from graph import ContextGraph, get_or_create_graph, GRAPH_PATH
 from rag_agent import stream_ask_rag_agent
 
@@ -83,6 +85,13 @@ def inject(message, action):
     st.session_state.pending = (message, action)
     st.rerun()
 
+def stream_cached(text: str):
+    """Yield a pre-written response word-by-word at ~60 wps — looks live, no API wait."""
+    words = text.split(" ")
+    for i, word in enumerate(words):
+        yield word + ("" if i == len(words) - 1 else " ")
+        time.sleep(0.018)
+
 def rag_houses():
     base = ["house_a", "house_b", "house_c"]
     return base + (["house_d"] if st.session_state.rag_house_d else [])
@@ -94,91 +103,128 @@ with st.sidebar:
     st.caption("RAG vs Context Graph — same story, different outcomes")
     st.divider()
 
-    st.markdown("### 🔍 Phase 1 — RAG Agent")
+    # ── 2-Minute Demo ──────────────────────────────────────────────────────────
+    st.markdown("### 🎯 2-Minute Demo")
+    st.caption("Run these 6 steps in order — RAG steps are instant")
 
-    if st.button("1. Compare Houses A, B, C", use_container_width=True):
-        inject("Help me compare Houses A, B, and C.", "rag")
+    st.markdown("**RAG — shows the problem**")
+    if st.button("1. Remove House B", use_container_width=True, key="d1"):
+        inject("Let's remove House B — commute too long and HOA too high.", "demo_rag_remove_b")
+    if st.button("2. Which houses are we considering?", use_container_width=True, key="d2"):
+        inject("Which houses are we currently considering?", "demo_rag_which_houses")
 
-    if st.button("2. Remove House B — commute too long, HOA too high", use_container_width=True):
-        inject(
-            "Let's remove House B from consideration. "
-            "The commute is too long and the HOA fees are too high.",
-            "rag",
-        )
+    st.markdown('<div class="time-note">⏰ New session — RAG has no memory</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="time-note">⏰ One week passes…</div>', unsafe_allow_html=True)
-
-    if st.button("3. Which houses are we still considering?", use_container_width=True):
-        inject("Which houses are we currently considering?", "rag_reset")
-
-    if st.button("4. Why did we reject House B?", use_container_width=True):
-        inject("Why did we reject House B?", "rag")
-
-    if st.button("5. Add House D to our list", use_container_width=True):
-        inject(
-            "A new house just came on the market — House D, $435,000. "
-            "Schools 4/5, Commute 5/5, Taxes 4/5, Crime Rate 4/5, "
-            "Resale Value 5/5, HOA 4/5. Can we add it to our consideration?",
-            "rag_add_d",
-        )
-
-    if st.button("6. Why are you recommending House D?", use_container_width=True):
-        inject("Why are you recommending House D?", "rag")
-
-    st.divider()
-
-    if st.button("⚡ Switch to Context Graph →", use_container_width=True, type="primary"):
+    if st.button("⚡ Switch to Context Graph →", use_container_width=True, key="d_switch", type="primary"):
         inject("", "transition")
 
-    st.divider()
-
-    st.markdown("### 🔗 Phase 2 — Context Graph")
-
-    if st.button("1. Compare Houses A, B, C", use_container_width=True, key="cg_1"):
-        inject("Help me compare Houses A, B, and C.", "cg")
-
-    if st.button("2. Remove House B — commute too long, HOA too high", use_container_width=True, key="cg_2"):
+    st.markdown("**Context Graph — solves it**")
+    if st.button("3. Remove House B", use_container_width=True, key="d3"):
         inject(
             "Let's remove House B from consideration. "
             "The commute is too long and the HOA fees are too high.",
             "cg",
         )
-
-    if st.button("3. Which houses are we still considering?", use_container_width=True, key="cg_3"):
+    if st.button("4. Which houses are we considering?", use_container_width=True, key="d4"):
         inject("Which houses are we currently considering?", "cg")
-
-    if st.button("4. Why did we reject House B?", use_container_width=True, key="cg_4"):
+    if st.button("5. Why did we reject House B?", use_container_width=True, key="d5"):
         inject("Why did we reject House B?", "cg")
-
-    if st.button("5. Add House D to our list", use_container_width=True, key="cg_5"):
+    if st.button("6. What if commute no longer matters?", use_container_width=True, key="d6"):
         inject(
-            "A new house just came on the market — House D, $435,000. "
-            "Schools 4/5, Commute 5/5, Taxes 4/5, Crime Rate 4/5, "
-            "Resale Value 5/5, HOA 4/5. Can we add it to our consideration?",
-            "cg_add_d",
-        )
-
-    if st.button("6. Why are you recommending House D?", use_container_width=True, key="cg_6"):
-        inject("Why are you recommending House D?", "cg")
-
-    st.markdown("---")
-    st.markdown("**Graph Traversal Demo**")
-
-    if st.button("7. What if commute is no longer a priority?", use_container_width=True, key="cg_7"):
-        inject(
-            "We've reconsidered our priorities — commute is no longer a top concern for us. "
-            "Use the graph to analyze which past decisions were influenced by commute-related reasoning. "
-            "What changes? Which decisions might need to be revisited?",
+            "We've reconsidered — commute is no longer a top concern. "
+            "Use the graph to analyze which past decisions were influenced by commute reasoning. "
+            "What changes?",
             "cg",
         )
 
-    if st.button("8. Trace: how exactly did we end up with House D?", use_container_width=True, key="cg_8"):
-        inject(
-            "Trace the complete reasoning path in the Context Graph that led to recommending House D. "
-            "Walk me through every node — from our stored preferences, through the rejection decision, "
-            "to the final recommendation. Show the full chain.",
-            "cg",
-        )
+    st.divider()
+
+    with st.expander("Full Demo (all steps)", expanded=False):
+        st.markdown("### 🔍 Phase 1 — RAG Agent")
+
+        if st.button("1. Compare Houses A, B, C", use_container_width=True):
+            inject("Help me compare Houses A, B, and C.", "rag")
+
+        if st.button("2. Remove House B — commute too long, HOA too high", use_container_width=True):
+            inject(
+                "Let's remove House B from consideration. "
+                "The commute is too long and the HOA fees are too high.",
+                "rag",
+            )
+
+        st.markdown('<div class="time-note">⏰ One week passes…</div>', unsafe_allow_html=True)
+
+        if st.button("3. Which houses are we still considering?", use_container_width=True):
+            inject("Which houses are we currently considering?", "rag_reset")
+
+        if st.button("4. Why did we reject House B?", use_container_width=True):
+            inject("Why did we reject House B?", "rag")
+
+        if st.button("5. Add House D to our list", use_container_width=True):
+            inject(
+                "A new house just came on the market — House D, $435,000. "
+                "Schools 4/5, Commute 5/5, Taxes 4/5, Crime Rate 4/5, "
+                "Resale Value 5/5, HOA 4/5. Can we add it to our consideration?",
+                "rag_add_d",
+            )
+
+        if st.button("6. Why are you recommending House D?", use_container_width=True):
+            inject("Why are you recommending House D?", "rag")
+
+        st.divider()
+
+        if st.button("⚡ Switch to Context Graph →", use_container_width=True, type="primary", key="full_switch"):
+            inject("", "transition")
+
+        st.divider()
+
+        st.markdown("### 🔗 Phase 2 — Context Graph")
+
+        if st.button("1. Compare Houses A, B, C", use_container_width=True, key="cg_1"):
+            inject("Help me compare Houses A, B, and C.", "cg")
+
+        if st.button("2. Remove House B — commute too long, HOA too high", use_container_width=True, key="cg_2"):
+            inject(
+                "Let's remove House B from consideration. "
+                "The commute is too long and the HOA fees are too high.",
+                "cg",
+            )
+
+        if st.button("3. Which houses are we still considering?", use_container_width=True, key="cg_3"):
+            inject("Which houses are we currently considering?", "cg")
+
+        if st.button("4. Why did we reject House B?", use_container_width=True, key="cg_4"):
+            inject("Why did we reject House B?", "cg")
+
+        if st.button("5. Add House D to our list", use_container_width=True, key="cg_5"):
+            inject(
+                "A new house just came on the market — House D, $435,000. "
+                "Schools 4/5, Commute 5/5, Taxes 4/5, Crime Rate 4/5, "
+                "Resale Value 5/5, HOA 4/5. Can we add it to our consideration?",
+                "cg_add_d",
+            )
+
+        if st.button("6. Why are you recommending House D?", use_container_width=True, key="cg_6"):
+            inject("Why are you recommending House D?", "cg")
+
+        st.markdown("---")
+        st.markdown("**Graph Traversal**")
+
+        if st.button("7. What if commute is no longer a priority?", use_container_width=True, key="cg_7"):
+            inject(
+                "We've reconsidered our priorities — commute is no longer a top concern for us. "
+                "Use the graph to analyze which past decisions were influenced by commute-related reasoning. "
+                "What changes? Which decisions might need to be revisited?",
+                "cg",
+            )
+
+        if st.button("8. Trace: how exactly did we end up with House D?", use_container_width=True, key="cg_8"):
+            inject(
+                "Trace the complete reasoning path in the Context Graph that led to recommending House D. "
+                "Walk me through every node — from our stored preferences, through the rejection decision, "
+                "to the final recommendation. Show the full chain.",
+                "cg",
+            )
 
     st.divider()
     st.caption(f"Date: `{st.session_state.simulated_date}`")
@@ -254,6 +300,28 @@ with col_chat:
                 st.markdown(f'<div class="time-note">{note}</div>', unsafe_allow_html=True)
                 push("system", note, phase="system")
                 action = "rag"
+
+            # ── 2-Min demo: cached RAG responses (instant, no API call) ────────
+            elif action in ("demo_rag_remove_b", "demo_rag_which_houses", "demo_rag_why_rejected"):
+                cache_key = action.replace("demo_", "")
+                if action == "demo_rag_which_houses":
+                    # simulate new session — clear history, advance date
+                    st.session_state.rag_history = []
+                    st.session_state.simulated_date = WEEK_LATER
+                    note = "⏰  New session — RAG has no memory of previous decisions."
+                    st.markdown(f'<div class="time-note">{note}</div>', unsafe_allow_html=True)
+                    push("system", note, phase="system")
+                with st.chat_message("user"):
+                    st.markdown(user_msg)
+                with st.chat_message("assistant", avatar="🔍"):
+                    reply = st.write_stream(stream_cached(CACHE[cache_key]))
+                push("user", user_msg, phase="rag")
+                push("assistant", reply, phase="rag", avatar="🔍")
+                st.session_state.rag_history += [
+                    {"role": "user",      "content": user_msg},
+                    {"role": "assistant", "content": reply},
+                ]
+                st.rerun()
 
             # Enable House D in RAG document set
             if action == "rag_add_d":

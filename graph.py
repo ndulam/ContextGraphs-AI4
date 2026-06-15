@@ -258,13 +258,9 @@ class ContextGraph:
         nodes = []
         for node_id, attrs in self.g.nodes(data=True):
             is_hl = node_id in hl
-            base_color = attrs.get("color", "#AAAAAA")
             is_house = attrs.get("node_type") in ("House", "House_new", "House_rejected")
-            color = (
-                {"background": base_color, "border": "#FFD700",
-                 "highlight": {"background": base_color, "border": "#FFD700"}}
-                if is_hl else base_color
-            )
+            # Use gold for highlighted nodes, original color otherwise — both plain strings
+            color = "#FFD700" if is_hl else attrs.get("color", "#AAAAAA")
             nodes.append(
                 Node(
                     id=node_id,
@@ -276,15 +272,12 @@ class ContextGraph:
             )
         edges = []
         for src, dst, attrs in self.g.edges(data=True):
-            is_hl_edge = src in hl and dst in hl
             edges.append(
                 Edge(
                     source=src,
                     target=dst,
                     label=attrs.get("relationship", ""),
-                    color={"color": "#FFD700", "opacity": 1.0} if is_hl_edge else {"color": "#555577", "opacity": 0.7},
                     font={"size": 9, "align": "middle"},
-                    width=3 if is_hl_edge else 1,
                 )
             )
         return nodes, edges
