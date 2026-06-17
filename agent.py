@@ -183,7 +183,7 @@ Your behavior rules:
 6. Be concise but specific. Reference dates, house names, and stored reasons directly.
 7. Never fabricate decisions or reasons — only cite what is in the graph.
 8. ALWAYS call highlight_reasoning_path() before your final answer, passing the specific node IDs you traversed to reach your answer. This makes graph traversal visible to the audience — it is what distinguishes a Context Graph from flat memory. Include 'user', relevant house IDs, decision IDs, reason IDs, preference IDs, and recommendation IDs from the graph state.
-9. When the user asks "what if X no longer matters" or changes a preference, call analyze_preference_impact() with the relevant keyword to traverse the graph and find affected decisions.
+9. When the user asks "what if X no longer matters" or changes a preference, call analyze_preference_impact() with the relevant keyword. The tool automatically traverses the graph, finds every rejection decision based on that preference, and reactivates any house whose ONLY rejection reason was that preference. Report which houses were reactivated and why.
 
 This is a demonstration showing that AI agents fail not because information is missing, but because CONTEXT is missing. Every response should visibly demonstrate graph traversal."""
 
@@ -252,9 +252,13 @@ def _execute_tool(tool_name: str, tool_input: dict, graph: ContextGraph, simulat
         ]
 
         affected_decisions = []
+        seen_decisions = set()
         for reason_id, _ in matching_reasons:
             for src, _ in graph.g.in_edges(reason_id):
+                if src in seen_decisions:
+                    continue
                 if graph.g.nodes[src].get("node_type") == "Decision":
+                    seen_decisions.add(src)
                     dec_attrs = graph.g.nodes[src]
                     all_reasons = [
                         graph.g.nodes[r].get("text", "")
@@ -272,6 +276,15 @@ def _execute_tool(tool_name: str, tool_input: dict, graph: ContextGraph, simulat
                         "decision_would_change": len(other_reasons) == 0,
                     })
 
+        # Auto-reactivate any REJECT decision where dropping this preference
+        # removes ALL rejection reasons — generic across any number of houses.
+        reactivated = []
+        for d in affected_decisions:
+            if d["decision_type"] == "REJECT" and d["decision_would_change"] and d["house"]:
+                graph.reactivate_house(d["house"], simulated_date)
+                reactivated.append(d["house_name"] or d["house"])
+                events.append(f"Reconsidering: {d['house_name'] or d['house']}")
+
         highlight_ids = (
             [r[0] for r in matching_reasons]
             + [d["id"] for d in affected_decisions]
@@ -280,6 +293,8 @@ def _execute_tool(tool_name: str, tool_input: dict, graph: ContextGraph, simulat
         )
         graph.set_highlighted_nodes(
             highlight_ids,
+            f"Dropping '{keyword}': {len(reactivated)} house(s) back in consideration"
+            if reactivated else
             f"Impact of removing '{keyword}': {len(affected_decisions)} decision(s) affected"
         )
         events.append(f"Impact analysis: '{keyword}' affects {len(affected_decisions)} decision(s)")
@@ -288,9 +303,11 @@ def _execute_tool(tool_name: str, tool_input: dict, graph: ContextGraph, simulat
             "keyword": keyword,
             "matching_reason_nodes": [{"id": r[0], "text": r[1].get("text")} for r in matching_reasons],
             "affected_decisions": affected_decisions,
+            "reactivated_houses": reactivated,
             "summary": (
                 f"{len(matching_reasons)} reason node(s) found for '{keyword}'. "
-                f"{len(affected_decisions)} decision(s) were BASED_ON these reasons."
+                f"{len(affected_decisions)} decision(s) affected. "
+                f"{len(reactivated)} house(s) moved back to active consideration: {reactivated}."
             ),
         }, indent=2), events
 

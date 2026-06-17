@@ -144,6 +144,20 @@ class ContextGraph:
         self.save()
         return rec_id
 
+    def reactivate_house(self, house_id: str, simulated_date: str):
+        """Move a rejected house back to active consideration."""
+        if house_id not in self.g.nodes:
+            return
+        attrs = self.g.nodes[house_id]
+        if attrs.get("status") != "rejected":
+            return
+        attrs["status"] = "active"
+        attrs["color"] = NODE_COLORS["House"]
+        attrs["node_type"] = "House"
+        house_name = HOUSES.get(house_id, {}).get("name", house_id)
+        self.log_event(f"[{simulated_date}] Reconsidering: {house_name} — preference changed")
+        self.save()
+
     # --- Query methods ---
 
     def get_active_houses(self) -> list[dict]:

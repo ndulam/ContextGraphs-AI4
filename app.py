@@ -144,10 +144,10 @@ with st.sidebar:
             "Please record these as our preferences.",
             "cg",
         )
-    if st.button("6. Remove House B (commute + HOA)", use_container_width=True, key="d6"):
+    if st.button("6. Remove House B — commute is the dealbreaker", use_container_width=True, key="d6"):
         inject(
             "Let's remove House B from consideration. "
-            "The commute is too long and the HOA fees are too high.",
+            "The commute score is too low — that's the dealbreaker for us.",
             "cg",
         )
     if st.button("7. Which houses are we considering?", use_container_width=True, key="d7"):
