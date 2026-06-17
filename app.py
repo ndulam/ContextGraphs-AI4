@@ -6,7 +6,10 @@ from streamlit_agraph import agraph, Config
 
 from agent import stream_ask_agent
 from data import HOUSES, NODE_COLORS
-from demo_cache import CACHE
+import importlib
+import demo_cache as _dm
+importlib.reload(_dm)
+CACHE = _dm.CACHE
 from graph import ContextGraph, get_or_create_graph, GRAPH_PATH
 from rag_agent import stream_ask_rag_agent
 
@@ -66,6 +69,8 @@ def _init():
         if k not in st.session_state:
             st.session_state[k] = v
     if st.session_state.graph is None:
+        if os.path.exists(GRAPH_PATH):
+            os.remove(GRAPH_PATH)
         st.session_state.graph = get_or_create_graph(DEFAULT_DATE)
     g = st.session_state.graph
     if not hasattr(g, "highlighted_nodes"):
@@ -103,128 +108,64 @@ with st.sidebar:
     st.caption("RAG vs Context Graph — same story, different outcomes")
     st.divider()
 
-    # ── 2-Minute Demo ──────────────────────────────────────────────────────────
-    st.markdown("### 🎯 2-Minute Demo")
-    st.caption("Run these 6 steps in order — RAG steps are instant")
+    st.markdown("### Demo Steps")
+    st.caption("Run in order — RAG steps are instant")
 
-    st.markdown("**RAG — shows the problem**")
-    if st.button("1. Remove House B", use_container_width=True, key="d1"):
-        inject("Let's remove House B — commute too long and HOA too high.", "demo_rag_remove_b")
-    if st.button("2. Which houses are we considering?", use_container_width=True, key="d2"):
+    st.markdown("**Part 1: RAG — shows the problem**")
+    if st.button("1. Compare Houses A, B, C", use_container_width=True, key="d1"):
+        inject("Help me compare Houses A, B, and C.", "demo_rag_compare")
+    if st.button("2. Remove House B (commute + HOA)", use_container_width=True, key="d2"):
+        inject(
+            "Let's remove House B from consideration. "
+            "The commute is too long and the HOA fees are too high.",
+            "demo_rag_remove_b",
+        )
+    if st.button("3. Compare House A and C", use_container_width=True, key="d3"):
+        inject(
+            "Compare House A and House C for me — what are the pros and cons of each?",
+            "demo_rag_compare_a_c",
+        )
+
+    st.markdown('<div class="time-note">⏰ One week later — new chat session</div>', unsafe_allow_html=True)
+
+    if st.button("4. Which houses are we considering?", use_container_width=True, key="d4"):
         inject("Which houses are we currently considering?", "demo_rag_which_houses")
 
-    st.markdown('<div class="time-note">⏰ New session — RAG has no memory</div>', unsafe_allow_html=True)
-
+    st.divider()
     if st.button("⚡ Switch to Context Graph →", use_container_width=True, key="d_switch", type="primary"):
         inject("", "transition")
+    st.divider()
 
-    st.markdown("**Context Graph — solves it**")
-    if st.button("3. Remove House B", use_container_width=True, key="d3"):
+    st.markdown("**Part 2: Context Graph — solves it**")
+    if st.button("5. Set our priorities", use_container_width=True, key="d5"):
+        inject(
+            "Before we decide, let me state our priorities: "
+            "we want a short commute and low HOA fees. "
+            "Please record these as our preferences.",
+            "cg",
+        )
+    if st.button("6. Remove House B (commute + HOA)", use_container_width=True, key="d6"):
         inject(
             "Let's remove House B from consideration. "
             "The commute is too long and the HOA fees are too high.",
             "cg",
         )
-    if st.button("4. Which houses are we considering?", use_container_width=True, key="d4"):
+    if st.button("7. Which houses are we considering?", use_container_width=True, key="d7"):
         inject("Which houses are we currently considering?", "cg")
-    if st.button("5. Why did we reject House B?", use_container_width=True, key="d5"):
+    if st.button("8. Why did we reject House B?", use_container_width=True, key="d8"):
         inject("Why did we reject House B?", "cg")
-    if st.button("6. What if commute no longer matters?", use_container_width=True, key="d6"):
+    if st.button("9. Commute is no longer a concern", use_container_width=True, key="d9"):
         inject(
-            "We've reconsidered — commute is no longer a top concern. "
+            "We've reconsidered — commute is no longer a top concern for us. "
             "Use the graph to analyze which past decisions were influenced by commute reasoning. "
             "What changes?",
             "cg",
         )
-
-    st.divider()
-
-    with st.expander("Full Demo (all steps)", expanded=False):
-        st.markdown("### 🔍 Phase 1 — RAG Agent")
-
-        if st.button("1. Compare Houses A, B, C", use_container_width=True):
-            inject("Help me compare Houses A, B, and C.", "rag")
-
-        if st.button("2. Remove House B — commute too long, HOA too high", use_container_width=True):
-            inject(
-                "Let's remove House B from consideration. "
-                "The commute is too long and the HOA fees are too high.",
-                "rag",
-            )
-
-        st.markdown('<div class="time-note">⏰ One week passes…</div>', unsafe_allow_html=True)
-
-        if st.button("3. Which houses are we still considering?", use_container_width=True):
-            inject("Which houses are we currently considering?", "rag_reset")
-
-        if st.button("4. Why did we reject House B?", use_container_width=True):
-            inject("Why did we reject House B?", "rag")
-
-        if st.button("5. Add House D to our list", use_container_width=True):
-            inject(
-                "A new house just came on the market — House D, $435,000. "
-                "Schools 4/5, Commute 5/5, Taxes 4/5, Crime Rate 4/5, "
-                "Resale Value 5/5, HOA 4/5. Can we add it to our consideration?",
-                "rag_add_d",
-            )
-
-        if st.button("6. Why are you recommending House D?", use_container_width=True):
-            inject("Why are you recommending House D?", "rag")
-
-        st.divider()
-
-        if st.button("⚡ Switch to Context Graph →", use_container_width=True, type="primary", key="full_switch"):
-            inject("", "transition")
-
-        st.divider()
-
-        st.markdown("### 🔗 Phase 2 — Context Graph")
-
-        if st.button("1. Compare Houses A, B, C", use_container_width=True, key="cg_1"):
-            inject("Help me compare Houses A, B, and C.", "cg")
-
-        if st.button("2. Remove House B — commute too long, HOA too high", use_container_width=True, key="cg_2"):
-            inject(
-                "Let's remove House B from consideration. "
-                "The commute is too long and the HOA fees are too high.",
-                "cg",
-            )
-
-        if st.button("3. Which houses are we still considering?", use_container_width=True, key="cg_3"):
-            inject("Which houses are we currently considering?", "cg")
-
-        if st.button("4. Why did we reject House B?", use_container_width=True, key="cg_4"):
-            inject("Why did we reject House B?", "cg")
-
-        if st.button("5. Add House D to our list", use_container_width=True, key="cg_5"):
-            inject(
-                "A new house just came on the market — House D, $435,000. "
-                "Schools 4/5, Commute 5/5, Taxes 4/5, Crime Rate 4/5, "
-                "Resale Value 5/5, HOA 4/5. Can we add it to our consideration?",
-                "cg_add_d",
-            )
-
-        if st.button("6. Why are you recommending House D?", use_container_width=True, key="cg_6"):
-            inject("Why are you recommending House D?", "cg")
-
-        st.markdown("---")
-        st.markdown("**Graph Traversal**")
-
-        if st.button("7. What if commute is no longer a priority?", use_container_width=True, key="cg_7"):
-            inject(
-                "We've reconsidered our priorities — commute is no longer a top concern for us. "
-                "Use the graph to analyze which past decisions were influenced by commute-related reasoning. "
-                "What changes? Which decisions might need to be revisited?",
-                "cg",
-            )
-
-        if st.button("8. Trace: how exactly did we end up with House D?", use_container_width=True, key="cg_8"):
-            inject(
-                "Trace the complete reasoning path in the Context Graph that led to recommending House D. "
-                "Walk me through every node — from our stored preferences, through the rejection decision, "
-                "to the final recommendation. Show the full chain.",
-                "cg",
-            )
+    if st.button("10. Which houses are we considering now?", use_container_width=True, key="d10"):
+        inject(
+            "Given that commute no longer matters, which houses are we now considering?",
+            "cg",
+        )
 
     st.divider()
     st.caption(f"Date: `{st.session_state.simulated_date}`")
@@ -237,7 +178,11 @@ with st.sidebar:
 
 
 # ── Main layout ────────────────────────────────────────────────────────────────
-col_chat, col_graph = st.columns([2, 1.2], gap="medium")
+if st.session_state.story_phase == "context_graph":
+    col_chat, col_graph = st.columns([2, 1.2], gap="medium")
+else:
+    col_chat = st.container()
+    col_graph = None
 
 
 # ── Chat column — rendering + streaming happens here ──────────────────────────
@@ -251,9 +196,10 @@ with col_chat:
         if not st.session_state.messages and not st.session_state.pending:
             st.info(
                 "Use the **sidebar steps** to walk through the story.\n\n"
-                "Start with **Phase 1** (RAG Agent) — run all 6 steps to see where "
-                "retrieval alone falls short. Then click **Switch to Context Graph** "
-                "and run the same 6 steps to see full context preserved."
+                "**Steps 1–4** (RAG): compare houses, remove one, then come back a week later "
+                "and watch RAG forget your decision.\n\n"
+                "**Steps 5–10** (Context Graph): state your priorities, replay the same story — "
+                "every decision is remembered, traceable, and adapts when your priorities change."
             )
 
         for msg in st.session_state.messages:
@@ -283,6 +229,12 @@ with col_chat:
 
             # Transition between phases
             if action == "transition":
+                # Reset graph so Part 2 always starts clean
+                if os.path.exists(GRAPH_PATH):
+                    os.remove(GRAPH_PATH)
+                st.session_state.graph = get_or_create_graph(WEEK_LATER)
+                st.session_state.graph_events = []
+                st.session_state.cg_history = []
                 st.markdown(
                     '<div class="story-divider">⚡ CONTEXT GRAPH ACTIVATED</div>',
                     unsafe_allow_html=True,
@@ -301,8 +253,8 @@ with col_chat:
                 push("system", note, phase="system")
                 action = "rag"
 
-            # ── 2-Min demo: cached RAG responses (instant, no API call) ────────
-            elif action in ("demo_rag_remove_b", "demo_rag_which_houses", "demo_rag_why_rejected"):
+            # ── Demo: cached RAG responses (instant, no API call) ───────────
+            elif action in ("demo_rag_compare", "demo_rag_remove_b", "demo_rag_compare_a_c", "demo_rag_which_houses"):
                 cache_key = action.replace("demo_", "")
                 if action == "demo_rag_which_houses":
                     # simulate new session — clear history, advance date
@@ -400,69 +352,69 @@ with col_chat:
         inject(user_input, action)
 
 
-# ── Context Graph panel ────────────────────────────────────────────────────────
-with col_graph:
-    st.markdown("#### 🔗 Context Graph")
+# ── Context Graph panel — only visible in Part 2 ──────────────────────────────
+if col_graph is not None:
+    with col_graph:
+        st.markdown("#### 🔗 Context Graph")
 
-    graph: ContextGraph = st.session_state.graph
-    agraph_nodes, agraph_edges = graph.to_agraph_format()
+        graph: ContextGraph = st.session_state.graph
+        agraph_nodes, agraph_edges = graph.to_agraph_format()
 
-    if agraph_nodes:
-        config = Config(
-            width=380,
-            height=380,
-            directed=True,
-            physics=True,
-            hierarchical=False,
-            nodeHighlightBehavior=True,
-            node={"labelProperty": "label", "fontSize": 11},
-            link={"labelProperty": "label", "renderLabel": True, "fontSize": 9},
-        )
-        agraph(nodes=agraph_nodes, edges=agraph_edges, config=config)
-    else:
-        st.caption("Graph builds as decisions are recorded in Phase 2.")
-        st.info("Switch to the Context Graph phase — nodes appear here in real time.")
+        if agraph_nodes:
+            config = Config(
+                width=380,
+                height=380,
+                directed=True,
+                physics=True,
+                hierarchical=False,
+                nodeHighlightBehavior=True,
+                node={"labelProperty": "label", "fontSize": 11},
+                link={"labelProperty": "label", "renderLabel": True, "fontSize": 9},
+            )
+            agraph(nodes=agraph_nodes, edges=agraph_edges, config=config)
+        else:
+            st.info("Graph nodes appear here as decisions are recorded.")
 
-    st.markdown("**Legend**")
-    pairs = [
-        ("User", NODE_COLORS["User"]),
-        ("House", NODE_COLORS["House"]),
-        ("Rejected", NODE_COLORS["House_rejected"]),
-        ("Decision", NODE_COLORS["Decision"]),
-        ("Reason", NODE_COLORS["Reason"]),
-        ("Preference", NODE_COLORS["Preference"]),
-    ]
-    c1, c2 = st.columns(2)
-    for i, (label, color) in enumerate(pairs):
-        (c1 if i % 2 == 0 else c2).markdown(
-            f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;'
-            f'background:{color};margin-right:5px;vertical-align:middle;"></span>'
-            f'<span style="font-size:11px;">{label}</span>',
-            unsafe_allow_html=True,
-        )
-
-    if graph.highlighted_nodes and graph.path_description:
-        st.divider()
-        st.markdown("**Reasoning Path Traversed**")
-        st.info(f"✨ {graph.path_description}", icon=None)
-
-    st.divider()
-    st.markdown("**Timeline**")
-    events = graph.events
-    if not events:
-        st.caption("No decisions recorded yet.")
-    else:
-        for ev in reversed(events[-8:]):
-            ts  = ev.get("timestamp", "")[:10]
-            msg = ev.get("message", "")
-            st.markdown(
-                f'<div style="font-size:11px;color:#aaa;padding:3px 0;'
-                f'border-bottom:1px solid #2a2a3a;">'
-                f'<span style="color:#F39C12;">{ts}</span> {msg}</div>',
+        st.markdown("**Legend**")
+        pairs = [
+            ("User", NODE_COLORS["User"]),
+            ("House", NODE_COLORS["House"]),
+            ("Rejected", NODE_COLORS["House_rejected"]),
+            ("Decision", NODE_COLORS["Decision"]),
+            ("Reason", NODE_COLORS["Reason"]),
+            ("Preference", NODE_COLORS["Preference"]),
+        ]
+        c1, c2 = st.columns(2)
+        for i, (label, color) in enumerate(pairs):
+            (c1 if i % 2 == 0 else c2).markdown(
+                f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;'
+                f'background:{color};margin-right:5px;vertical-align:middle;"></span>'
+                f'<span style="font-size:11px;">{label}</span>',
                 unsafe_allow_html=True,
             )
 
-    if st.session_state.graph_events:
+        if graph.highlighted_nodes and graph.path_description:
+            st.divider()
+            st.markdown("**Reasoning Path Traversed**")
+            st.info(f"✨ {graph.path_description}", icon=None)
+
         st.divider()
-        for ev in st.session_state.graph_events[-3:]:
-            st.success(ev, icon="✅")
+        st.markdown("**Timeline**")
+        events = graph.events
+        if not events:
+            st.caption("No decisions recorded yet.")
+        else:
+            for ev in reversed(events[-8:]):
+                ts  = ev.get("timestamp", "")[:10]
+                msg = ev.get("message", "")
+                st.markdown(
+                    f'<div style="font-size:11px;color:#aaa;padding:3px 0;'
+                    f'border-bottom:1px solid #2a2a3a;">'
+                    f'<span style="color:#F39C12;">{ts}</span> {msg}</div>',
+                    unsafe_allow_html=True,
+                )
+
+        if st.session_state.graph_events:
+            st.divider()
+            for ev in st.session_state.graph_events[-3:]:
+                st.success(ev, icon="✅")
